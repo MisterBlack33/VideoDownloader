@@ -98,6 +98,14 @@ public class VideoDownloader {
         VideoInfo videoInfo = handler.extractVideoInfo(detection, finalUrl);
         if (videoInfo == null || videoInfo.getStreamUrl() == null
                 || videoInfo.getStreamType() == null || videoInfo.getStreamType() == StreamType.UNKNOWN) {
+            if (debug) {
+                System.out.println("[DEBUG] Extraktion fehlgeschlagen. Erkannte Metadaten:");
+                System.out.println("[DEBUG] " + detection.getMetadata());
+                if (videoInfo != null) {
+                    System.out.println("[DEBUG] Ermittelte streamUrl: " + videoInfo.getStreamUrl());
+                    System.out.println("[DEBUG] Ermittelter streamType: " + videoInfo.getStreamType());
+                }
+            }
             throw new VideoNotFoundException("Kein unterstuetzter Videostream gefunden.");
         }
         if (debug) {

@@ -31,13 +31,20 @@ public class JWPlayerDetector implements PlayerDetector {
             Pattern.compile("jwplayer\\.version\\s*=\\s*[\"']([\\d.]+)[\"']", Pattern.CASE_INSENSITIVE);
 
     // file: "https://.../video.m3u8" innerhalb einer setup()-Konfiguration
-    private static final Pattern FILE_PROPERTY = Pattern.compile(
+    private static final Pattern FILE_PROPERTY_WITH_EXTENSION = Pattern.compile(
             "[\"']?file[\"']?\\s*:\\s*[\"']([^\"']+\\.(?:m3u8|mpd|mp4|webm|m4v|mov)[^\"']*)[\"']",
             Pattern.CASE_INSENSITIVE);
 
-    // sources: [ { file: "...", type: "..." }, ... ]
+    // Fallback: file-Eigenschaft OHNE erkennbare Dateiendung, z. B. signierte/generierte
+    // URLs wie "getVideo.php?id=123". Der Streamtyp wird in diesem Fall ueber das
+    // begleitende "type"-Attribut ermittelt (siehe StreamTypeResolver.resolveByMimeType).
+    private static final Pattern ANY_FILE_PROPERTY = Pattern.compile(
+            "[\"']?file[\"']?\\s*:\\s*[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);
+
+    // sources: [ { file: "...", type: "..." }, ... ] - Block wird als Ganzes erfasst,
+    // damit file UND type gemeinsam ausgewertet werden koennen.
     private static final Pattern SOURCE_BLOCK = Pattern.compile(
-            "\\{[^{}]*[\"']?file[\"']?\\s*:\\s*[\"']([^\"']+)[\"'][^{}]*\\}",
+            "\\{([^{}]*[\"']?file[\"']?\\s*:\\s*[\"']([^\"']+)[\"'][^{}]*)\\}",
             Pattern.CASE_INSENSITIVE);
 
     private static final Pattern TYPE_PROPERTY = Pattern.compile(
@@ -99,11 +106,15 @@ public class JWPlayerDetector implements PlayerDetector {
             metadata.put("streamTypeHint", streamTypeHint);
         }
 
-        String streamUrl = extractStreamUrl(html);
-        if (streamUrl != null) {
-            metadata.put("streamUrl", streamUrl);
+        StreamCandidate streamCandidate = extractStreamUrl(html);
+        if (streamCandidate != null) {
+            metadata.put("streamUrl", streamCandidate.url);
+            if (streamCandidate.mimeType != null) {
+                metadata.put("streamUrlType", streamCandidate.mimeType);
+            }
             confidence += 20;
         }
+        String streamUrl = streamCandidate != null ? streamCandidate.url : null;
 
         if (!hasSetupCall && streamUrl == null && version == null) {
             // Nur der Text "jwplayer" kam vor, aber keine echte Konfiguration erkennbar.
@@ -128,22 +139,56 @@ public class JWPlayerDetector implements PlayerDetector {
         return v;
     }
 
+    /** Ergebnis der Stream-URL-Suche: URL plus (falls vorhanden) begleitender MIME-Type. */
+    private static class StreamCandidate {
+        final String url;
+        final String mimeType;
+
+        StreamCandidate(String url, String mimeType) {
+            this.url = url;
+            this.mimeType = mimeType;
+        }
+    }
+
     /**
-     * Sucht nach der ersten plausiblen Stream-URL innerhalb einer jwplayer-Konfiguration:
-     * zunaechst innerhalb von "sources"-Bloecken, dann direkt ueber "file"-Eigenschaften.
+     * Sucht nach der ersten plausiblen Stream-URL innerhalb einer jwplayer-Konfiguration.
+     * Reihenfolge:
+     * 1. "sources"-Bloecke mit erkennbarer Dateiendung (file + optional type)
+     * 2. direkte "file"-Eigenschaft mit erkennbarer Dateiendung
+     * 3. "sources"-Bloecke OHNE erkennbare Dateiendung, aber mit auswertbarem "type"
+     *    (z. B. signierte/generierte URLs) - der Streamtyp wird dann ueber den MIME-Type
+     *    ermittelt (siehe StreamTypeResolver)
+     * 4. direkte "file"-Eigenschaft ohne erkennbare Dateiendung, als letzter Fallback
      */
-    private String extractStreamUrl(String html) {
+    private StreamCandidate extractStreamUrl(String html) {
         Matcher sourceMatcher = SOURCE_BLOCK.matcher(html);
+        StreamCandidate fallbackWithoutExtension = null;
+
         while (sourceMatcher.find()) {
-            String candidate = sourceMatcher.group(1);
-            if (looksLikeStreamUrl(candidate)) {
-                return candidate;
+            String block = sourceMatcher.group(1);
+            String candidateUrl = sourceMatcher.group(2);
+            String type = firstGroupOrNull(TYPE_PROPERTY, block);
+
+            if (looksLikeStreamUrl(candidateUrl)) {
+                return new StreamCandidate(candidateUrl, type);
+            }
+            if (fallbackWithoutExtension == null && type != null) {
+                fallbackWithoutExtension = new StreamCandidate(candidateUrl, type);
             }
         }
 
-        Matcher fileMatcher = FILE_PROPERTY.matcher(html);
+        Matcher fileMatcher = FILE_PROPERTY_WITH_EXTENSION.matcher(html);
         if (fileMatcher.find()) {
-            return fileMatcher.group(1);
+            return new StreamCandidate(fileMatcher.group(1), null);
+        }
+
+        if (fallbackWithoutExtension != null) {
+            return fallbackWithoutExtension;
+        }
+
+        Matcher anyFileMatcher = ANY_FILE_PROPERTY.matcher(html);
+        if (anyFileMatcher.find()) {
+            return new StreamCandidate(anyFileMatcher.group(1), null);
         }
 
         return null;

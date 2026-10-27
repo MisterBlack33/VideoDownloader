@@ -42,7 +42,8 @@ public abstract class AbstractStreamUrlHandler implements PlayerHandler {
         }
 
         URI resolvedStreamUrl = resolve(pageUrl, rawStreamUrl);
-        StreamType streamType = StreamTypeResolver.resolve(rawStreamUrl);
+        String mimeTypeHint = detection.getMetadata("streamUrlType");
+        StreamType streamType = StreamTypeResolver.resolve(rawStreamUrl, mimeTypeHint);
 
         VideoInfo info = new VideoInfo();
         info.setPageUrl(pageUrl);
