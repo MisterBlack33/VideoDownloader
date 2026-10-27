@@ -62,7 +62,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>de.example.videodownloader.Main</mainClass>
+                            <mainClass>videodownloader.Main</mainClass>
                         </manifest>
                     </archive>
                 </configuration>

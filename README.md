@@ -59,7 +59,7 @@ funktioniert auch ein einfacher `javac`-Build ohne jegliche Abhängigkeiten:
 ```bash
 mkdir out
 javac -encoding UTF-8 -d out $(find src/main/java -name "*.java")
-java -cp out de.example.videodownloader.Main
+java -cp out videodownloader.Main
 ```
 
 ## Verwendung
